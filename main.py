@@ -65,8 +65,8 @@ def MU_R(W, X):
 def IRLS_update(lr, ld, W, X, Y):
     MU, R = MU_R(W, X)
     matrix = np.linalg.pinv(np.matrix(ld * np.identity(X.shape[1]) + X.T.dot(R).dot(X)))
-    delta = matrix.dot(- ld * W + X.T.dot(MU - Y)) # .clip(-1., 1.)
-    return W - lr * delta
+    gradient = matrix.dot(ld * W + X.T.dot(MU - Y)) # .clip(-1., 1.)
+    return W - lr * gradient
 
 
 def Loss(ld, W, X, Y):
@@ -75,7 +75,7 @@ def Loss(ld, W, X, Y):
         temp = W.T.dot(xi)
         loss += (yi * temp - np.log(1. + np.exp(temp))).item()
 
-    loss = loss - ld / 2 * W.T.dot(W).item()
+    loss = loss - ld / 2 * np.linalg.norm(W)
     return loss
 
 
@@ -90,13 +90,16 @@ def train(config):
         'test_loss': [],
         'auc': [],
         'acc': [],
+        'train_acc': [],
         'lr': [],
+        'norm': [],
     }
 
     for epoch in tqdm(range(total_epochs)):
-        train_loss = - Loss(ld, W, X, Y)
-        Y_scores, test_loss, auc, acc = test(config, W)
-        print('Epoch {:<5d}: Lr: {:<10f}; training loss: {:<10f}; testing loss: {:<10f}, AUC: {:<4f}, Acuracy: {:<4f}'.format(epoch, lr, train_loss, test_loss, auc, acc))
+        _, train_loss, _, train_acc = test(config, W, X, Y)
+        Y_scores, test_loss, auc, acc = test(config, W, config['test_features'], config['test_labels'])
+        norm = W.T.dot(W).item()
+        print('Epoch {:<5d}: Lr: {:<10f}; training loss: {:<10f}, Acuracy: {:<4f}; testing loss: {:<10f}, AUC: {:<4f}, Acuracy: {:<4f}; L2-norm: {:<4f}'.format(epoch, lr, train_loss, train_acc, test_loss, auc, acc, norm))
 
         W = IRLS_update(lr, ld, W, X, Y)
 
@@ -106,14 +109,16 @@ def train(config):
         vis_data['test_loss'].append(test_loss)
         vis_data['auc'].append(auc)
         vis_data['acc'].append(acc)
+        vis_data['train_acc'].append(train_acc)
         vis_data['lr'].append(lr)
+        vis_data['norm'].append(norm)
 
     vis_data['converge_result'] = [config['test_labels'].flatten(), Y_scores]
     plot(vis_data, file_path='vis/ld_' + str(ld))
 
 
-def test(config, W):
-    ld, X, Y = config['ld'], config['test_features'], config['test_labels']
+def test(config, W, X, Y):
+    ld = config['ld']
     loss = - Loss(ld, W, X, Y)
 
     Y_true = Y.flatten()
@@ -139,7 +144,7 @@ if __name__=='__main__':
     config['feature_dim'] = 123
     config['train_file'] = 'a9a'
     config['test_file'] = 'a9a.t'
-    config['ld'] = 0.01
+    config['ld'] = 0
     config['lr'] = 1
     config['total_epochs'] = 20
 

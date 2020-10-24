@@ -75,3 +75,25 @@ def plot(vis_data, file_path):
 
     Y, Y_scores = vis_data['converge_result']
     acu_curve(Y, Y_scores, file_name=os.path.join(file_path, 'roc.png'))
+
+
+def plot_norm():
+    axix = range(20)
+    plt.title('L2-norm weights comparison')
+    colors = ['red', 'black', 'blue', 'skyblue', 'green']
+    for ld, color in zip([0, 0.01, 0.1, 1, 10], colors):
+        arr = np.load('vis/ld_' + str(ld) + '/norm.npy')
+        plt.plot(axix, arr, color=color, label='lambda=' + str(ld))
+    # plt.plot(x_axix, train_pn_dis, color='skyblue', label='PN distance')
+    # plt.plot(x_axix, thresholds, color='blue', label='threshold')
+    plt.legend()  # 显示图例
+
+    plt.xlabel('iteration times')
+    plt.ylabel('L2-norm of weights')
+    # plt.show()
+    plt.savefig('norm.png')
+    plt.close()
+
+
+if __name__=='__main__':
+    plot_norm()

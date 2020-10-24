@@ -144,7 +144,7 @@ if __name__=='__main__':
     config['feature_dim'] = 123
     config['train_file'] = 'a9a'
     config['test_file'] = 'a9a.t'
-    config['ld'] = 0
+    config['ld'] = 0.01
     config['lr'] = 1
     config['total_epochs'] = 20
 

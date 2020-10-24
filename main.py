@@ -1,10 +1,13 @@
+from tqdm import tqdm
 import numpy as np
 from sklearn.metrics import roc_auc_score
-
+from vis import plot
 
 def transform(line, feature_dim):
     data = line.split(' ')
     label = int(data[0])
+    if label < 0:
+        label = 0
     feature = np.zeros(feature_dim)
     for dt in data[1:]:
         feature_id, val = dt.split(':')
@@ -30,8 +33,13 @@ def load_data(file_path, feature_dim):
 
 
 def init_weights(feature_dim):
-    weights = np.random.rand(feature_dim, 1) * (0.)
+    weights = np.random.randn(feature_dim, 1) * 1e-2
     return weights
+
+
+def adjust_lr(init_lr, step, total_epochs):
+    lr = init_lr * (0.1 ** (step / total_epochs))
+    return lr
 
 
 def sigmoid(x):
@@ -54,22 +62,18 @@ def MU_R(W, X):
     return MU.reshape(feature_num, 1), R
 
 
-def IRLS_update(ld, W, X, Y):
+def IRLS_update(lr, ld, W, X, Y):
     MU, R = MU_R(W, X)
-    try:
-        matrix = np.matrix(ld + X.T.dot(R).dot(X)).I
-    except:
-        matrix = np.linalg.pinv(np.matrix(ld + X.T.dot(R).dot(X)))
-        import ipdb
-        ipdb.set_trace()
-    delta = matrix.dot(- ld * W + X.T.dot(MU - Y))
-    return W - 1e-4 * delta
+    matrix = np.linalg.pinv(np.matrix(ld * np.identity(X.shape[1]) + X.T.dot(R).dot(X)))
+    delta = matrix.dot(- ld * W + X.T.dot(MU - Y)) # .clip(-1., 1.)
+    return W - lr * delta
 
 
 def Loss(ld, W, X, Y):
     loss = 0.
     for (xi, yi) in zip(X, Y):
-        loss += (yi * W.T.dot(xi) - np.log(1. + np.exp(W.T.dot(xi)))).item()
+        temp = W.T.dot(xi)
+        loss += (yi * temp - np.log(1. + np.exp(temp))).item()
 
     loss = loss - ld / 2 * W.T.dot(W).item()
     return loss
@@ -77,18 +81,35 @@ def Loss(ld, W, X, Y):
 
 def train(config):
     W = init_weights(config['feature_dim'])
-    ld, X, Y = config['ld'], config['train_features'], config['train_labels']
-    epsilon = 1e-3
-    loss = np.inf
-    epoch = 1
-    while np.abs(loss) >= epsilon:
+    lr, ld, X, Y = config['lr'], config['ld'], config['train_features'], config['train_labels']
+    total_epochs = config['total_epochs']
+    Y_scores = []
+
+    vis_data = {
+        'train_loss':[],
+        'test_loss': [],
+        'auc': [],
+        'acc': [],
+        'lr': [],
+    }
+
+    for epoch in tqdm(range(total_epochs)):
         train_loss = - Loss(ld, W, X, Y)
-        test_loss, auc = test(config, W)
-        print('Epoch {:<5d}: training loss: {:<10f}; testing loss: {:<10f}, AUC: {:<4f}'.format(epoch, train_loss, test_loss, auc))
+        Y_scores, test_loss, auc, acc = test(config, W)
+        print('Epoch {:<5d}: Lr: {:<10f}; training loss: {:<10f}; testing loss: {:<10f}, AUC: {:<4f}, Acuracy: {:<4f}'.format(epoch, lr, train_loss, test_loss, auc, acc))
 
-        W = IRLS_update(ld, W, X, Y)
+        W = IRLS_update(lr, ld, W, X, Y)
 
-        epoch += 1
+        # lr = adjust_lr(config['lr'], epoch, total_epochs // 3)
+
+        vis_data['train_loss'].append(train_loss)
+        vis_data['test_loss'].append(test_loss)
+        vis_data['auc'].append(auc)
+        vis_data['acc'].append(acc)
+        vis_data['lr'].append(lr)
+
+    vis_data['converge_result'] = [config['test_labels'].flatten(), Y_scores]
+    plot(vis_data, file_path='vis/ld_' + str(ld))
 
 
 def test(config, W):
@@ -97,13 +118,19 @@ def test(config, W):
 
     Y_true = Y.flatten()
     Y_scores = []
-    for xi in X:
+    acc = 0
+    for xi, yi in zip(X, Y_true):
         score = mu(W, xi)
         Y_scores.append(score.item())
 
+        if (score >= 0.5 and yi == 1) or (score < 0.5 and yi == 0):
+            acc += 1
+
+    acc /= len(X)
+
     auc = roc_auc_score(Y_true, Y_scores)
 
-    return loss, auc
+    return Y_scores, loss, auc, acc
 
 
 if __name__=='__main__':
@@ -112,10 +139,11 @@ if __name__=='__main__':
     config['feature_dim'] = 123
     config['train_file'] = 'a9a'
     config['test_file'] = 'a9a.t'
-    config['ld'] = 0.
+    config['ld'] = 0.01
+    config['lr'] = 1
+    config['total_epochs'] = 20
 
     config['train_labels'], config['train_features'] = load_data(config['train_file'], config['feature_dim'])
     config['test_labels'], config['test_features'] = load_data(config['test_file'], config['feature_dim'])
 
     train(config)
-
